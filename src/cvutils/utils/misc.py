@@ -9,6 +9,25 @@ from inspect import getfullargspec
 from itertools import repeat
 
 
+
+def _ntuple(n):
+
+    def parse(x):
+        if isinstance(x, collections.abc.Iterable):
+            return x
+        return tuple(repeat(x, n))
+
+    return parse
+
+
+to_1tuple = _ntuple(1)
+to_2tuple = _ntuple(2)
+to_3tuple = _ntuple(3)
+to_4tuple = _ntuple(4)
+to_ntuple = _ntuple
+
+
+
 def is_str(x):
     """Whether the input is an string instance.
     Note: This method is deprecated since python 2 is no longer supported.
@@ -81,3 +100,130 @@ def is_seq_of(seq, expected_type, seq_type=None):
         if not isinstance(item, expected_type):
             return False
     return True
+
+
+def is_list_of(seq, expected_type):
+    """Check whether it is a list of some type.
+    A partial method of :func:`is_seq_of`.
+    """
+    return is_seq_of(seq, expected_type, seq_type=list)
+
+
+def is_tuple_of(seq, expected_type):
+    """Check whether it is a tuple of some type.
+    A partial method of :func:`is_seq_of`.
+    """
+    return is_seq_of(seq, expected_type, seq_type=tuple)
+
+
+def slice_list(in_list, lens):
+    """Slice a list into several sub lists by a list of given length.
+    Args:
+        in_list (list): The list to be sliced.
+        lens(int or list): The expected length of each out list.
+    Returns:
+        list: A list of sliced list.
+    """
+    if isinstance(lens, int):
+        assert len(in_list) % lens == 0
+        lens = [lens] * int(len(in_list) / lens)
+    if not isinstance(lens, list):
+        raise TypeError('"indices" must be an integer or a list of integers')
+    elif sum(lens) != len(in_list):
+        raise ValueError('sum of lens and list length does not '
+                         f'match: {sum(lens)} != {len(in_list)}')
+    out_list = []
+    idx = 0
+    for i in range(len(lens)):
+        out_list.append(in_list[idx:idx + lens[i]])
+        idx += lens[i]
+    return out_list
+
+
+def concat_list(in_list):
+    """Concatenate a list of list into a single list.
+    Args:
+        in_list (list): The list of list to be merged.
+    Returns:
+        list: The concatenated flat list.
+    """
+    return list(itertools.chain(*in_list))
+
+
+def check_prerequisites(
+        prerequisites,
+        checker,
+        msg_tmpl='Prerequisites "{}" are required in method "{}" but not '
+        'found, please install them first.'):  # yapf: disable
+    """A decorator factory to check if prerequisites are satisfied.
+    Args:
+        prerequisites (str of list[str]): Prerequisites to be checked.
+        checker (callable): The checker method that returns True if a
+            prerequisite is meet, False otherwise.
+        msg_tmpl (str): The message template with two variables.
+    Returns:
+        decorator: A specific decorator.
+    """
+
+    def wrap(func):
+
+        @functools.wraps(func)
+        def wrapped_func(*args, **kwargs):
+            requirements = [prerequisites] if isinstance(
+                prerequisites, str) else prerequisites
+            missing = []
+            for item in requirements:
+                if not checker(item):
+                    missing.append(item)
+            if missing:
+                print(msg_tmpl.format(', '.join(missing), func.__name__))
+                raise RuntimeError('Prerequisites not meet.')
+            else:
+                return func(*args, **kwargs)
+
+        return wrapped_func
+
+    return wrap
+
+
+def _check_py_package(package):
+    try:
+        import_module(package)
+    except ImportError:
+        return False
+    else:
+        return True
+
+
+def _check_executable(cmd):
+    if subprocess.call(f'which {cmd}', shell=True) != 0:
+        return False
+    else:
+        return True
+
+
+def requires_package(prerequisites):
+    """A decorator to check if some python packages are installed.
+    Example:
+        >>> @requires_package('numpy')
+        >>> func(arg1, args):
+        >>>     return numpy.zeros(1)
+        array([0.])
+        >>> @requires_package(['numpy', 'non_package'])
+        >>> func(arg1, args):
+        >>>     return numpy.zeros(1)
+        ImportError
+    """
+    return check_prerequisites(prerequisites, checker=_check_py_package)
+
+
+def requires_executable(prerequisites):
+    """A decorator to check if some executable files are installed.
+    Example:
+        >>> @requires_executable('ffmpeg')
+        >>> func(arg1, args):
+        >>>     print(1)
+        1
+    """
+    return check_prerequisites(prerequisites, checker=_check_executable)
+    
