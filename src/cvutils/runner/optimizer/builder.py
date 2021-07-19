@@ -4,9 +4,13 @@ import inspect
 import torch
 
 from ...utils import Registry, build_from_cfg
+from src.cvutils.models.optimizers import MABN_SGD
+
 
 OPTIMIZERS = Registry('optimizer')
 OPTIMIZER_BUILDERS = Registry('optimizer builder')
+OPTIMIZERS.register_module('ClusterNorm_SGD', module=MABN_SGD)
+OPTIMIZERS.register_module('MABN_SGD', module=MABN_SGD)
 
 
 def register_torch_optimizers():

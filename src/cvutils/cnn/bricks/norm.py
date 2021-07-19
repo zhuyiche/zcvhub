@@ -6,6 +6,12 @@ from src.cvutils.utils import is_tuple_of
 from src.cvutils.utils.parrots_wrapper import SyncBatchNorm, _BatchNorm, _InstanceNorm
 from .registry import NORM_LAYERS
 
+from src.cvutils.models.layers.norms import MovingAverageBN2d
+from src.cvutils.models.layers.norms import ClusterNorm2d
+# Self Defined BN
+NORM_LAYERS.register_module('MABN2d', module=MovingAverageBN2d)
+NORM_LAYERS.register_module('ClusterNorm2d', module=ClusterNorm2d)
+
 NORM_LAYERS.register_module('BN', module=nn.BatchNorm2d)
 NORM_LAYERS.register_module('BN1d', module=nn.BatchNorm1d)
 NORM_LAYERS.register_module('BN2d', module=nn.BatchNorm2d)

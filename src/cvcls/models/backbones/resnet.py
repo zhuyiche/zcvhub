@@ -430,7 +430,7 @@ class ResNet(BaseBackbone):
         101: (Bottleneck, (3, 4, 23, 3)),
         152: (Bottleneck, (3, 8, 36, 3))
     }
-
+    
     def __init__(self,
                  depth,
                  in_channels=3,
@@ -460,6 +460,7 @@ class ResNet(BaseBackbone):
         super(ResNet, self).__init__(init_cfg)
         if depth not in self.arch_settings:
             raise KeyError(f'invalid depth {depth} for resnet')
+
         self.depth = depth
         self.stem_channels = stem_channels
         self.base_channels = base_channels

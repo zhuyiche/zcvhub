@@ -84,7 +84,9 @@ class ResNet_CIFAR(ResNet):
 
 @BACKBONES.register_module()
 class ResNet_CIFAR_ClusterNorm(ResNet):
-    """ResNet backbone for CIFAR using Cluster Norm for finetune.
+    """ResNet backbone.
+    Please refer to the `paper <https://arxiv.org/abs/1512.03385>`_ for
+    details.
     Args:
         depth (int): Network depth, from {18, 34, 50, 101, 152}.
         in_channels (int): Number of input image channels. Default: 3.
@@ -102,8 +104,8 @@ class ResNet_CIFAR_ClusterNorm(ResNet):
         style (str): `pytorch` or `caffe`. If set to "pytorch", the stride-two
             layer is the 3x3 conv layer, otherwise the stride-two layer is
             the first 1x1 conv layer.
-        deep_stem (bool): This network has specific designed stem, thus it is
-            asserted to be False.
+        deep_stem (bool): Replace 7x7 conv in input stem with 3 3x3 conv.
+            Default: False.
         avg_down (bool): Use AvgPool instead of stride conv when
             downsampling in the bottleneck. Default: False.
         frozen_stages (int): Stages to be frozen (stop grad and set eval mode).
@@ -117,11 +119,23 @@ class ResNet_CIFAR_ClusterNorm(ResNet):
             memory while slowing down the training speed. Default: False.
         zero_init_residual (bool): Whether to use zero init for last norm layer
             in resblocks to let them behave as identity. Default: True.
-        cn_stage (int): Stage of using ClusterNorm
+    Example:
+        >>> from mmcls.models import ResNet
+        >>> import torch
+        >>> self = ResNet(depth=18)
+        >>> self.eval()
+        >>> inputs = torch.rand(1, 3, 32, 32)
+        >>> level_outputs = self.forward(inputs)
+        >>> for level_out in level_outputs:
+        ...     print(tuple(level_out.shape))
+        (1, 64, 8, 8)
+        (1, 128, 4, 4)
+        (1, 256, 2, 2)
+        (1, 512, 1, 1)
     """
+
     def __init__(self,
                  depth,
-                 cn_stage=2,
                  in_channels=3,
                  stem_channels=64,
                  base_channels=64,
@@ -136,7 +150,8 @@ class ResNet_CIFAR_ClusterNorm(ResNet):
                  frozen_stages=-1,
                  conv_cfg=None,
                  norm_cfg=dict(type='BN', requires_grad=True),
-                 cn_norm_cfg=dict(type='ClusterNorm', requires_grad=True),
+                 clusternorm_cfg=dict(type='ClusterNorm', requires_grad=True),
+                 clusternorm_stage=3,
                  norm_eval=False,
                  with_cp=False,
                  zero_init_residual=True,
@@ -147,10 +162,11 @@ class ResNet_CIFAR_ClusterNorm(ResNet):
                          val=1,
                          layer=['_BatchNorm', 'GroupNorm'])
                  ]):
-        super(ResNet_CIFAR, self).__init__()
-        assert not self.deep_stem, 'ResNet_CIFAR do not support deep_stem'
+        super(ResNet_CIFAR_ClusterNorm, self).__init__(init_cfg)
         if depth not in self.arch_settings:
             raise KeyError(f'invalid depth {depth} for resnet')
+        assert not self.deep_stem, 'ResNet_CIFAR do not support deep_stem'
+
         self.depth = depth
         self.stem_channels = stem_channels
         self.base_channels = base_channels
@@ -172,9 +188,12 @@ class ResNet_CIFAR_ClusterNorm(ResNet):
         self.zero_init_residual = zero_init_residual
         self.block, stage_blocks = self.arch_settings[depth]
         self.stage_blocks = stage_blocks[:num_stages]
-        self.expansion = get_expansion(self.block, expansion)
+        self.expansion = super.get_expansion(self.block, expansion)
 
-        self.cn_stage = cn_stage
+        # cluster norm
+        self.clusternorm_stage = clusternorm_stage
+        self.clusternorm_cfg = clusternorm_cfg
+
         self._make_stem_layer(in_channels, stem_channels)
 
         self.res_layers = []
@@ -183,7 +202,7 @@ class ResNet_CIFAR_ClusterNorm(ResNet):
         for i, num_blocks in enumerate(self.stage_blocks):
             stride = strides[i]
             dilation = dilations[i]
-            if cn_stage >= i:
+            if i >= self.clusternorm_stage:
                 res_layer = self.make_res_layer(
                     block=self.block,
                     num_blocks=num_blocks,
@@ -196,8 +215,8 @@ class ResNet_CIFAR_ClusterNorm(ResNet):
                     avg_down=self.avg_down,
                     with_cp=with_cp,
                     conv_cfg=conv_cfg,
-                    norm_cfg=cn_norm_cfg)
-            else:
+                    norm_cfg=clusternorm_cfg)
+            else:  
                 res_layer = self.make_res_layer(
                     block=self.block,
                     num_blocks=num_blocks,
@@ -211,7 +230,6 @@ class ResNet_CIFAR_ClusterNorm(ResNet):
                     with_cp=with_cp,
                     conv_cfg=conv_cfg,
                     norm_cfg=norm_cfg)
-                    
             _in_channels = _out_channels
             _out_channels *= 2
             layer_name = f'layer{i + 1}'
@@ -221,7 +239,6 @@ class ResNet_CIFAR_ClusterNorm(ResNet):
         self._freeze_stages()
 
         self.feat_dim = res_layer[-1].out_channels
-
 
 
     def _make_stem_layer(self, in_channels, base_channels):
